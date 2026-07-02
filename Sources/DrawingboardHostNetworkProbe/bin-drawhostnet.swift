@@ -171,38 +171,45 @@ private extension DrawingboardHostNetworkProbe {
                 "DrawingboardHostNetworkProbe accepted connection"
             )
 
-            var messageIterator = connection.messages().makeAsyncIterator()
+            do {
+                var messageIterator = connection.messages().makeAsyncIterator()
 
-            while let message = try await messageIterator.next() {
-                print(
-                    "DrawingboardHostNetworkProbe received \(message)"
-                )
-
-                do {
-                    try await host.apply(
-                        message
-                    )
-
-                    let snapshot = await host.snapshot()
-                    let frame = try renderFrame(
-                        state: snapshot,
-                        pageSize: seed.pageSize,
-                        viewSize: seed.viewSize
-                    )
-
-                    view.update(
-                        renderFrame: frame
-                    )
-
+                while let message = try await messageIterator.next() {
                     print(
-                        "DrawingboardHostNetworkProbe applied message"
+                        "DrawingboardHostNetworkProbe received \(message)"
                     )
-                } catch {
-                    fputs(
-                        "DrawingboardHostNetworkProbe rejected message \(message): \(error.localizedDescription)\n",
-                        stderr
-                    )
+
+                    do {
+                        try await host.apply(
+                            message
+                        )
+
+                        let snapshot = await host.snapshot()
+                        let frame = try renderFrame(
+                            state: snapshot,
+                            pageSize: seed.pageSize,
+                            viewSize: seed.viewSize
+                        )
+
+                        view.update(
+                            renderFrame: frame
+                        )
+
+                        print(
+                            "DrawingboardHostNetworkProbe applied message"
+                        )
+                    } catch {
+                        fputs(
+                            "DrawingboardHostNetworkProbe rejected message \(message): \(error.localizedDescription)\n",
+                            stderr
+                        )
+                    }
                 }
+            } catch {
+                fputs(
+                    "DrawingboardHostNetworkProbe connection failed: \(error.localizedDescription)\n",
+                    stderr
+                )
             }
 
             print(

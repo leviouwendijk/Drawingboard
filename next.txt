@@ -1,4 +1,15 @@
 > undo/redo (ipad)
 > synced state (ipad)
+
+--
+
 > stroke options (thickness, color)
 > pencilkit (erase, pressure menu)
+
+> breakages
+> retries (3 max, per min or so) on connection failure + manual retry
+
+> navigation / pinch, zoom and swiping / gestures
+
+> scene switching (next / previsous, maybe even indexed navgiation menu (horizontal, scrollable view))
+ -- helps going back to a preivous 'slide' on presentation

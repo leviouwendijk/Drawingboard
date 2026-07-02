@@ -130,7 +130,7 @@ private actor DrawingPadNetworkDocumentMirror {
         publish()
     }
 
-    func makeUndoEvent() throws -> DrawingEvent? {
+    func makeUndoMessage() throws -> DrawingMessage? {
         guard let entry = undoStack.popLast() else {
             return nil
         }
@@ -146,10 +146,12 @@ private actor DrawingPadNetworkDocumentMirror {
 
         publish()
 
-        return entry.undo
+        return .snapshot(
+            state.document
+        )
     }
 
-    func makeRedoEvent() throws -> DrawingEvent? {
+    func makeRedoMessage() throws -> DrawingMessage? {
         guard let entry = redoStack.popLast() else {
             return nil
         }
@@ -165,7 +167,9 @@ private actor DrawingPadNetworkDocumentMirror {
 
         publish()
 
-        return entry.redo
+        return .snapshot(
+            state.document
+        )
     }
 }
 
@@ -346,26 +350,22 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
     }
 
     public func undo() async throws {
-        guard let event = try await mirror.makeUndoEvent() else {
+        guard let message = try await mirror.makeUndoMessage() else {
             return
         }
 
         try await client.send(
-            .event(
-                event
-            )
+            message
         )
     }
 
     public func redo() async throws {
-        guard let event = try await mirror.makeRedoEvent() else {
+        guard let message = try await mirror.makeRedoMessage() else {
             return
         }
 
         try await client.send(
-            .event(
-                event
-            )
+            message
         )
     }
 }
