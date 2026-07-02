@@ -7,19 +7,48 @@ import DrawingboardRendering
 import Foundation
 import UIKit
 
+public enum DrawingPadTouchInputPolicy: String, Sendable, Codable, Hashable, CaseIterable {
+    case pencilOnly
+    case fingerOnly
+    case pencilAndFinger
+}
+
 public struct DrawingPadCanvasConfiguration: Sendable, Hashable {
     public let pageSize: DrawingSize
     public let margin: Double
-    public let allowsFingerDrawing: Bool
+    public let inputPolicy: DrawingPadTouchInputPolicy
 
     public init(
         pageSize: DrawingSize,
         margin: Double = 0,
-        allowsFingerDrawing: Bool = false
+        inputPolicy: DrawingPadTouchInputPolicy = .pencilOnly
     ) {
         self.pageSize = pageSize
         self.margin = margin
-        self.allowsFingerDrawing = allowsFingerDrawing
+        self.inputPolicy = inputPolicy
+    }
+
+    public init(
+        pageSize: DrawingSize,
+        margin: Double = 0,
+        allowsFingerDrawing: Bool
+    ) {
+        self.init(
+            pageSize: pageSize,
+            margin: margin,
+            inputPolicy: allowsFingerDrawing ? .pencilAndFinger : .pencilOnly
+        )
+    }
+
+    public var allowsFingerDrawing: Bool {
+        switch inputPolicy {
+        case .pencilOnly:
+            false
+
+        case .fingerOnly,
+             .pencilAndFinger:
+            true
+        }
     }
 }
 
@@ -39,6 +68,7 @@ public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
 
     private var tool: DrawingTool
     private var erasedStrokeIDsDuringActiveTouch: Set<DrawingStrokeIdentifier> = []
+    private var isPinching = false
 
     public init(
         runtime: DrawingPadAppRuntime,
@@ -188,7 +218,7 @@ public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
         }
 
         guard activeTouch == nil,
-              let touch = acceptedTouch(
+              let touch = acceptedDrawingTouch(
                 from: touches
               ) else {
             return
@@ -357,18 +387,38 @@ public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
+    public func gestureRecognizerShouldBegin(
+        _ gestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        if gestureRecognizer is UIPinchGestureRecognizer {
+            return true
+        }
+
+        if let pan = gestureRecognizer as? UIPanGestureRecognizer {
+            return pan.numberOfTouches >= minimumNavigationTouchCount()
+        }
+
+        return true
+    }
+
     public func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        true
+        let firstIsPinch = gestureRecognizer is UIPinchGestureRecognizer
+        let secondIsPinch = otherGestureRecognizer is UIPinchGestureRecognizer
+        let firstIsPan = gestureRecognizer is UIPanGestureRecognizer
+        let secondIsPan = otherGestureRecognizer is UIPanGestureRecognizer
+
+        return firstIsPinch && secondIsPan ||
+            firstIsPan && secondIsPinch
     }
 
     public func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldReceive touch: UITouch
     ) -> Bool {
-        touch.type != .pencil
+        touch.type == .direct
     }
 }
 
@@ -390,7 +440,7 @@ private extension DrawingPadCanvasView {
             action: #selector(handlePan)
         )
         pan.delegate = self
-        pan.minimumNumberOfTouches = 2
+        pan.minimumNumberOfTouches = 1
         pan.maximumNumberOfTouches = 2
         pan.cancelsTouchesInView = false
 
@@ -406,11 +456,15 @@ private extension DrawingPadCanvasView {
         do {
             switch recognizer.state {
             case .began:
+                isPinching = true
+                panBaseViewport = nil
                 cancelActiveStroke()
 
                 pinchBaseViewport = try currentViewport()
 
             case .changed:
+                isPinching = true
+
                 let base = try pinchBaseViewport ?? currentViewport()
                 let location = recognizer.location(
                     in: self
@@ -422,8 +476,8 @@ private extension DrawingPadCanvasView {
                         recognizer.scale
                     ),
                     anchor: DrawingCoordinate(
-                        x: location.x,
-                        y: location.y
+                        x: Double(location.x),
+                        y: Double(location.y)
                     )
                 )
 
@@ -432,6 +486,7 @@ private extension DrawingPadCanvasView {
             case .ended,
                  .cancelled,
                  .failed:
+                isPinching = false
                 pinchBaseViewport = nil
 
             default:
@@ -449,6 +504,14 @@ private extension DrawingPadCanvasView {
         _ recognizer: UIPanGestureRecognizer
     ) {
         do {
+            guard !isPinching else {
+                return
+            }
+
+            guard recognizer.numberOfTouches >= minimumNavigationTouchCount() else {
+                return
+            }
+
             switch recognizer.state {
             case .began:
                 cancelActiveStroke()
@@ -463,8 +526,8 @@ private extension DrawingPadCanvasView {
 
                 viewport = try base.panned(
                     by: DrawingVector(
-                        dx: translation.x,
-                        dy: translation.y
+                        dx: Double(translation.x),
+                        dy: Double(translation.y)
                     )
                 )
 
@@ -481,6 +544,56 @@ private extension DrawingPadCanvasView {
         } catch {
             onError(
                 error
+            )
+        }
+    }
+
+    func minimumNavigationTouchCount() -> Int {
+        switch configuration.inputPolicy {
+        case .pencilOnly:
+            1
+
+        case .fingerOnly,
+             .pencilAndFinger:
+            2
+        }
+    }
+
+    func acceptsDrawingTouch(
+        _ touch: UITouch
+    ) -> Bool {
+        switch touch.type {
+        case .pencil:
+            switch configuration.inputPolicy {
+            case .pencilOnly,
+                 .pencilAndFinger:
+                return true
+
+            case .fingerOnly:
+                return false
+            }
+
+        case .direct:
+            switch configuration.inputPolicy {
+            case .fingerOnly,
+                 .pencilAndFinger:
+                return true
+
+            case .pencilOnly:
+                return false
+            }
+
+        default:
+            return false
+        }
+    }
+
+    func acceptedDrawingTouch(
+        from touches: Set<UITouch>
+    ) -> UITouch? {
+        touches.first { touch in
+            acceptsDrawingTouch(
+                touch
             )
         }
     }
@@ -521,22 +634,22 @@ private extension DrawingPadCanvasView {
         context.beginPath()
         context.move(
             to: CGPoint(
-                x: first.x,
-                y: first.y
+                x: CGFloat(first.x),
+                y: CGFloat(first.y)
             )
         )
 
         for point in stroke.points.dropFirst() {
             context.addLine(
                 to: CGPoint(
-                    x: point.x,
-                    y: point.y
+                    x: CGFloat(point.x),
+                    y: CGFloat(point.y)
                 )
             )
         }
 
         context.setLineWidth(
-            stroke.width
+            CGFloat(stroke.width)
         )
         context.setLineCap(
             .round
@@ -546,27 +659,14 @@ private extension DrawingPadCanvasView {
         )
         context.setStrokeColor(
             UIColor(
-                red: stroke.color.r,
-                green: stroke.color.g,
-                blue: stroke.color.b,
-                alpha: stroke.color.a
+                red: CGFloat(stroke.color.r),
+                green: CGFloat(stroke.color.g),
+                blue: CGFloat(stroke.color.b),
+                alpha: CGFloat(stroke.color.a)
             ).cgColor
         )
         context.strokePath()
         context.restoreGState()
-    }
-
-    func acceptedTouch(
-        from touches: Set<UITouch>
-    ) -> UITouch? {
-        touches.first { touch in
-            if touch.type == .pencil {
-                return true
-            }
-
-            return configuration.allowsFingerDrawing &&
-                touch.type == .direct
-        }
     }
 
     func drawingPoint(
@@ -579,8 +679,8 @@ private extension DrawingPadCanvasView {
         let viewport = try currentViewport()
         let pageCoordinate = viewport.viewToPage(
             DrawingCoordinate(
-                x: location.x,
-                y: location.y
+                x: Double(location.x),
+                y: Double(location.y)
             )
         )
 
@@ -616,7 +716,7 @@ private extension DrawingPadCanvasView {
 
         return min(
             max(
-                normalized,
+                Double(normalized),
                 0
             ),
             1
@@ -649,10 +749,10 @@ private extension DrawingPadCanvasView {
         )
 
         return CGRect(
-            x: origin.x,
-            y: origin.y,
-            width: farCorner.x - origin.x,
-            height: farCorner.y - origin.y
+            x: CGFloat(origin.x),
+            y: CGFloat(origin.y),
+            width: CGFloat(farCorner.x - origin.x),
+            height: CGFloat(farCorner.y - origin.y)
         )
     }
 
@@ -701,8 +801,8 @@ private extension DrawingPadCanvasView {
     ) throws {
         let base = try currentViewport()
         let center = DrawingCoordinate(
-            x: bounds.midX,
-            y: bounds.midY
+            x: Double(bounds.midX),
+            y: Double(bounds.midY)
         )
         let requestedScale = base.scale * factor
 
