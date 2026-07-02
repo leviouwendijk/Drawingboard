@@ -1,0 +1,5 @@
+{"event":{"stroke_began":{"_0":{"id":"live-probe-stroke","page":"probe-page","points":[{"predicted":false,"time":0,"x":120,"y":140}],"tool":{"color":{"a":1,"b":0,"g":0,"r":0},"kind":"pen","width":5}}}},"sequence":0,"time":1783002741.550452}
+{"event":{"stroke_moved":{"_0":{"points":[{"predicted":false,"time":0.01,"x":220,"y":180},{"predicted":false,"time":0.02,"x":320,"y":120}],"stroke":"live-probe-stroke"}}},"sequence":1,"time":1783002741.7317371}
+{"event":{"stroke_moved":{"_0":{"points":[{"predicted":false,"time":0.03,"x":440,"y":260},{"predicted":false,"time":0.04,"x":620,"y":220}],"stroke":"live-probe-stroke"}}},"sequence":2,"time":1783002741.914109}
+{"event":{"stroke_moved":{"_0":{"points":[{"predicted":false,"time":0.05,"x":760,"y":360},{"predicted":false,"time":0.06,"x":920,"y":300}],"stroke":"live-probe-stroke"}}},"sequence":3,"time":1783002742.100354}
+{"event":{"stroke_ended":{"_0":{"points":[{"predicted":false,"time":0.07,"x":1040,"y":380}],"stroke":"live-probe-stroke"}}},"sequence":4,"time":1783002742.2924109}

@@ -1,0 +1,166 @@
+{
+  "failed" : 0,
+  "failed_names" : [
+
+  ],
+  "generated_at" : "2026-07-02T15:07:30Z",
+  "passed" : 17,
+  "results" : [
+    {
+      "display_name" : "Document reducer",
+      "duration_seconds" : 9.202957153320312e-05,
+      "name" : "document.reducer",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Message codec",
+      "duration_seconds" : 0.00021195411682128906,
+      "name" : "message.codec",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Host and pad runtime",
+      "duration_seconds" : 1.800060272216797e-05,
+      "name" : "runtime.host-pad",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Viewport transform",
+      "duration_seconds" : 2.9802322387695312e-06,
+      "name" : "viewport.transform",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Event log replay",
+      "duration_seconds" : 0.0003489255905151367,
+      "name" : "event-log.replay",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Loopback transport",
+      "duration_seconds" : 7.605552673339844e-05,
+      "name" : "transport.loopback",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Network transport",
+      "duration_seconds" : 0.10834097862243652,
+      "name" : "transport.network",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Pad stroke batching",
+      "duration_seconds" : 5.4001808166503906e-05,
+      "name" : "pad.batching",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Pad app runtime",
+      "duration_seconds" : 1.0013580322265625e-05,
+      "name" : "pad.app-runtime",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Pad network session",
+      "duration_seconds" : 0.10558700561523438,
+      "name" : "pad.network-session",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Render commands",
+      "duration_seconds" : 0.00020599365234375,
+      "name" : "render.commands",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Host event log",
+      "duration_seconds" : 5.2094459533691406e-05,
+      "name" : "host.event-log",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Event log store",
+      "duration_seconds" : 0.0036079883575439453,
+      "name" : "event-log.store",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Recording manifest",
+      "duration_seconds" : 0.0038149356842041016,
+      "name" : "recording.manifest",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Recording replay",
+      "duration_seconds" : 0.0018450021743774414,
+      "name" : "recording.replay",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Event log incremental store",
+      "duration_seconds" : 0.0012279748916625977,
+      "name" : "event-log.incremental-store",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    },
+    {
+      "display_name" : "Event log timing",
+      "duration_seconds" : 5.1021575927734375e-05,
+      "name" : "event-log.timing",
+      "status" : "passed",
+      "tags" : [
+
+      ]
+    }
+  ],
+  "skipped" : 0,
+  "title" : "Drawingboard",
+  "total" : 17
+}

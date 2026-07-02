@@ -1,0 +1,69 @@
+{
+  "originHash" : "2ae509a13fbd2ff5b3b36fcfa9731b88b05744c0ace2f1ddc7f0811d24e2bea7",
+  "pins" : [
+    {
+      "identity" : "ansi",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/ANSI.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "073d9ca7870b688a312608acf14eae6ba052c0d6"
+      }
+    },
+    {
+      "identity" : "difference",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Difference.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "ca0f33316fcf56ace04f1f5a1bb178667a291abc"
+      }
+    },
+    {
+      "identity" : "primitives",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Primitives.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "eb58bcd1ea305d13ff0c0f6fcd03d869a8612802"
+      }
+    },
+    {
+      "identity" : "strings",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Strings",
+      "state" : {
+        "branch" : "master",
+        "revision" : "86a939d7bbb3e25808f88fbcedcee4069a5a5ae1"
+      }
+    },
+    {
+      "identity" : "terminal",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Terminal.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "0a55bdc55ce07514cf9dc772edef4fa27cbdb2d6"
+      }
+    },
+    {
+      "identity" : "testflows",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/TestFlows.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "79b1af3ebd1fe834f2bd0b68642e55f25a261428"
+      }
+    },
+    {
+      "identity" : "version",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Version.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "7a29050af8694fbf8280a7e52551cd38b82beeac"
+      }
+    }
+  ],
+  "version" : 3
+}

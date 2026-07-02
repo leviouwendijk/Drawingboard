@@ -1,0 +1,9 @@
+{
+  "activePage" : "probe-page",
+  "document" : "B4720DA3-FA55-4F67-AC6A-0EE4C899B980",
+  "eventLogFile" : "drawingboard-events.jsonl",
+  "pageSize" : {
+    "height" : 720,
+    "width" : 1280
+  }
+}
