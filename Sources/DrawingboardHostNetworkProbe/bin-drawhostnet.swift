@@ -174,20 +174,35 @@ private extension DrawingboardHostNetworkProbe {
             var messageIterator = connection.messages().makeAsyncIterator()
 
             while let message = try await messageIterator.next() {
-                try await host.apply(
-                    message
+                print(
+                    "DrawingboardHostNetworkProbe received \(message)"
                 )
 
-                let snapshot = await host.snapshot()
-                let frame = try renderFrame(
-                    state: snapshot,
-                    pageSize: seed.pageSize,
-                    viewSize: seed.viewSize
-                )
+                do {
+                    try await host.apply(
+                        message
+                    )
 
-                view.update(
-                    renderFrame: frame
-                )
+                    let snapshot = await host.snapshot()
+                    let frame = try renderFrame(
+                        state: snapshot,
+                        pageSize: seed.pageSize,
+                        viewSize: seed.viewSize
+                    )
+
+                    view.update(
+                        renderFrame: frame
+                    )
+
+                    print(
+                        "DrawingboardHostNetworkProbe applied message"
+                    )
+                } catch {
+                    fputs(
+                        "DrawingboardHostNetworkProbe rejected message \(message): \(error.localizedDescription)\n",
+                        stderr
+                    )
+                }
             }
 
             print(

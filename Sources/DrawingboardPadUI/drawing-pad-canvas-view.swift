@@ -30,6 +30,7 @@ public final class DrawingPadCanvasView: UIView {
     private let onError: (Error) -> Void
 
     private weak var activeTouch: UITouch?
+    private var pendingOperation: Task<Void, Never>?
 
     public init(
         runtime: DrawingPadAppRuntime,
@@ -312,7 +313,11 @@ private extension DrawingPadCanvasView {
     func perform(
         _ operation: @escaping @MainActor () async throws -> Void
     ) {
-        Task { @MainActor in
+        let previousOperation = pendingOperation
+
+        let nextOperation = Task { @MainActor in
+            await previousOperation?.value
+
             do {
                 try await operation()
             } catch {
@@ -321,6 +326,8 @@ private extension DrawingPadCanvasView {
                 )
             }
         }
+
+        pendingOperation = nextOperation
     }
 }
 
