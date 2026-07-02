@@ -1,0 +1,5 @@
+import DrawingboardRendering
+
+public typealias DrawingPadExporter = DrawingboardExporter
+public typealias DrawingPadExportResult = DrawingboardExportResult
+public typealias DrawingPadExportError = DrawingboardExportError
