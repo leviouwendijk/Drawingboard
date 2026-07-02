@@ -1,0 +1,4 @@
+> undo/redo (ipad)
+> synced state (ipad)
+> stroke options (thickness, color)
+> pencilkit (erase, pressure menu)

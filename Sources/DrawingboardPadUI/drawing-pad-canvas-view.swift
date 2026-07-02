@@ -29,6 +29,7 @@ public final class DrawingPadCanvasView: UIView {
     private let configuration: DrawingPadCanvasConfiguration
     private let onError: (Error) -> Void
 
+    private var state: DrawingDocumentState?
     private weak var activeTouch: UITouch?
     private var pendingOperation: Task<Void, Never>?
 
@@ -54,6 +55,13 @@ public final class DrawingPadCanvasView: UIView {
         coder: NSCoder
     ) {
         nil
+    }
+
+    public func update(
+        state: DrawingDocumentState?
+    ) {
+        self.state = state
+        setNeedsDisplay()
     }
 
     public override func draw(
@@ -109,6 +117,11 @@ public final class DrawingPadCanvasView: UIView {
             context.stroke(
                 pageRect,
                 width: 1
+            )
+
+            try drawCommands(
+                context: context,
+                viewport: viewport
             )
         } catch {
             onError(
@@ -250,6 +263,76 @@ public final class DrawingPadCanvasView: UIView {
 }
 
 private extension DrawingPadCanvasView {
+    func drawCommands(
+        context: CGContext,
+        viewport: DrawingViewport
+    ) throws {
+        guard let state else {
+            return
+        }
+
+        let frame = try DrawingRenderCommandResolver().resolve(
+            state: state,
+            viewport: viewport
+        )
+
+        for command in frame.commands {
+            switch command {
+            case .stroke(let stroke):
+                drawStroke(
+                    stroke,
+                    context: context
+                )
+            }
+        }
+    }
+
+    func drawStroke(
+        _ stroke: DrawingRenderStrokeCommand,
+        context: CGContext
+    ) {
+        guard let first = stroke.points.first else {
+            return
+        }
+
+        context.saveGState()
+        context.beginPath()
+        context.move(
+            to: CGPoint(
+                x: first.x,
+                y: first.y
+            )
+        )
+
+        for point in stroke.points.dropFirst() {
+            context.addLine(
+                to: CGPoint(
+                    x: point.x,
+                    y: point.y
+                )
+            )
+        }
+
+        context.setLineWidth(
+            stroke.width
+        )
+        context.setLineCap(
+            .round
+        )
+        context.setLineJoin(
+            .round
+        )
+        context.setStrokeColor(
+            UIColor(
+                red: stroke.color.r,
+                green: stroke.color.g,
+                blue: stroke.color.b,
+                alpha: stroke.color.a
+            ).cgColor
+        )
+        context.strokePath()
+        context.restoreGState()
+    }
     func acceptedTouch(
         from touches: Set<UITouch>
     ) -> UITouch? {

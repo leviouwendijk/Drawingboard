@@ -39,6 +39,12 @@ public struct DrawingDocumentReducer: Sendable {
                 in: &state
             )
 
+        case .page_restored(let page):
+            try restore(
+                page,
+                in: &state
+            )
+
         case .stroke_began(let stroke):
             try begin(
                 stroke,
@@ -60,6 +66,18 @@ public struct DrawingDocumentReducer: Sendable {
         case .stroke_cancelled(let id):
             try cancel(
                 stroke: id,
+                in: &state
+            )
+
+        case .stroke_removed(let id):
+            try remove(
+                stroke: id,
+                in: &state
+            )
+
+        case .stroke_restored(let stroke):
+            try restore(
+                stroke,
                 in: &state
             )
         }
@@ -109,6 +127,27 @@ private extension DrawingDocumentReducer {
 
         state.openStrokes = state.openStrokes.filter { _, stroke in
             stroke.page != id
+        }
+    }
+
+    func restore(
+        _ page: DrawingPage,
+        in state: inout DrawingDocumentState
+    ) throws {
+        if let index = state.document.pages.firstIndex(where: { $0.id == page.id }) {
+            state.document.pages[index] = page
+        } else {
+            state.document.pages.append(
+                page
+            )
+        }
+
+        state.openStrokes = state.openStrokes.filter { _, stroke in
+            stroke.page != page.id
+        }
+
+        if !state.document.pages.contains(where: { $0.id == state.document.activePage }) {
+            state.document.activePage = page.id
         }
     }
 
@@ -187,5 +226,54 @@ private extension DrawingDocumentReducer {
                 id.rawValue
             )
         }
+    }
+
+    func remove(
+        stroke id: DrawingStrokeIdentifier,
+        in state: inout DrawingDocumentState
+    ) throws {
+        if state.openStrokes.removeValue(forKey: id) != nil {
+            return
+        }
+
+        for pageIndex in state.document.pages.indices {
+            if let strokeIndex = state.document.pages[pageIndex].strokes.firstIndex(where: { $0.id == id }) {
+                state.document.pages[pageIndex].strokes.remove(
+                    at: strokeIndex
+                )
+                return
+            }
+        }
+
+        throw DrawingError.missingOpenStroke(
+            id.rawValue
+        )
+    }
+
+    func restore(
+        _ stroke: DrawingStroke,
+        in state: inout DrawingDocumentState
+    ) throws {
+        guard let pageIndex = state.document.pages.firstIndex(where: { $0.id == stroke.page }) else {
+            throw DrawingError.missingPage(
+                stroke.page.rawValue
+            )
+        }
+
+        guard state.openStrokes[stroke.id] == nil else {
+            throw DrawingError.duplicateOpenStroke(
+                stroke.id.rawValue
+            )
+        }
+
+        guard !state.document.pages[pageIndex].strokes.contains(where: { $0.id == stroke.id }) else {
+            throw DrawingError.duplicateOpenStroke(
+                stroke.id.rawValue
+            )
+        }
+
+        state.document.pages[pageIndex].strokes.append(
+            stroke
+        )
     }
 }

@@ -170,6 +170,7 @@ let package = Package(
             name: "DrawingboardPadNetworkRuntime",
             dependencies: [
                 "DrawingboardCore",
+                "DrawingboardProtocol",
                 "DrawingboardPadRuntime",
                 "DrawingboardNetworkTransport",
             ]
