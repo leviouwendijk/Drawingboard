@@ -3,7 +3,6 @@ import DrawingboardCore
 import DrawingboardHostRuntime
 import DrawingboardNetworkTransport
 import DrawingboardProtocol
-import DrawingboardRendering
 import Foundation
 
 @MainActor
@@ -32,16 +31,14 @@ final class DrawingboardHostNetworkProbe: NSObject, NSApplicationDelegate {
     ) {
         do {
             let seed = try Self.makeSeed()
+            let initialState = DrawingDocumentState(
+                document: seed.document
+            )
+
             let host = DrawingHostRuntime(
                 document: seed.document
             )
-            let initialFrame = try Self.renderFrame(
-                state: DrawingDocumentState(
-                    document: seed.document
-                ),
-                pageSize: seed.pageSize,
-                viewSize: seed.viewSize
-            )
+
             let view = DrawingboardHostNetworkProbeView(
                 frame: NSRect(
                     x: 0,
@@ -49,7 +46,8 @@ final class DrawingboardHostNetworkProbe: NSObject, NSApplicationDelegate {
                     width: seed.viewSize.width,
                     height: seed.viewSize.height
                 ),
-                renderFrame: initialFrame
+                state: initialState,
+                pageSize: seed.pageSize
             )
 
             let window = NSWindow(
@@ -88,7 +86,6 @@ final class DrawingboardHostNetworkProbe: NSObject, NSApplicationDelegate {
                     try await Self.runServer(
                         server: server,
                         host: host,
-                        seed: seed,
                         view: view
                     )
                 } catch is CancellationError {
@@ -161,7 +158,6 @@ private extension DrawingboardHostNetworkProbe {
     static func runServer(
         server: DrawingNetworkHostServer,
         host: DrawingHostRuntime,
-        seed: DrawingboardHostNetworkProbeSeed,
         view: DrawingboardHostNetworkProbeView
     ) async throws {
         var connectionIterator = server.start().makeAsyncIterator()
@@ -185,14 +181,9 @@ private extension DrawingboardHostNetworkProbe {
                         )
 
                         let snapshot = await host.snapshot()
-                        let frame = try renderFrame(
-                            state: snapshot,
-                            pageSize: seed.pageSize,
-                            viewSize: seed.viewSize
-                        )
 
                         view.update(
-                            renderFrame: frame
+                            state: snapshot
                         )
 
                         print(
@@ -216,22 +207,5 @@ private extension DrawingboardHostNetworkProbe {
                 "DrawingboardHostNetworkProbe connection ended"
             )
         }
-    }
-
-    static func renderFrame(
-        state: DrawingDocumentState,
-        pageSize: DrawingSize,
-        viewSize: DrawingSize
-    ) throws -> DrawingRenderFrame {
-        let viewport = try DrawingViewport.fitPage(
-            pageSize: pageSize,
-            viewSize: viewSize,
-            margin: 24
-        )
-
-        return try DrawingRenderCommandResolver().resolve(
-            state: state,
-            viewport: viewport
-        )
     }
 }
