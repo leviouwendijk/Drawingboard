@@ -13,30 +13,56 @@ public enum DrawingPadTouchInputPolicy: String, Sendable, Codable, Hashable, Cas
     case pencilAndFinger
 }
 
+public struct DrawingPadCanvasInsets: Sendable, Codable, Hashable {
+    public let top: Double
+    public let left: Double
+    public let bottom: Double
+    public let right: Double
+
+    public init(
+        top: Double = 0,
+        left: Double = 0,
+        bottom: Double = 0,
+        right: Double = 0
+    ) {
+        self.top = top
+        self.left = left
+        self.bottom = bottom
+        self.right = right
+    }
+
+    public static let zero = DrawingPadCanvasInsets()
+}
+
 public struct DrawingPadCanvasConfiguration: Sendable, Hashable {
     public let pageSize: DrawingSize
     public let margin: Double
     public let inputPolicy: DrawingPadTouchInputPolicy
+    public let viewportInsets: DrawingPadCanvasInsets
 
     public init(
         pageSize: DrawingSize,
         margin: Double = 0,
-        inputPolicy: DrawingPadTouchInputPolicy = .pencilOnly
+        inputPolicy: DrawingPadTouchInputPolicy = .pencilOnly,
+        viewportInsets: DrawingPadCanvasInsets = .zero
     ) {
         self.pageSize = pageSize
         self.margin = margin
         self.inputPolicy = inputPolicy
+        self.viewportInsets = viewportInsets
     }
 
     public init(
         pageSize: DrawingSize,
         margin: Double = 0,
-        allowsFingerDrawing: Bool
+        allowsFingerDrawing: Bool,
+        viewportInsets: DrawingPadCanvasInsets = .zero
     ) {
         self.init(
             pageSize: pageSize,
             margin: margin,
-            inputPolicy: allowsFingerDrawing ? .pencilAndFinger : .pencilOnly
+            inputPolicy: allowsFingerDrawing ? .pencilAndFinger : .pencilOnly,
+            viewportInsets: viewportInsets
         )
     }
 
@@ -55,7 +81,7 @@ public struct DrawingPadCanvasConfiguration: Sendable, Hashable {
 @MainActor
 public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
     private let runtime: DrawingPadAppRuntime
-    private let configuration: DrawingPadCanvasConfiguration
+    private var configuration: DrawingPadCanvasConfiguration
     private let onError: (Error) -> Void
 
     private var state: DrawingDocumentState?
@@ -99,9 +125,11 @@ public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
     }
 
     public func update(
+        configuration: DrawingPadCanvasConfiguration,
         state: DrawingDocumentState?,
         tool: DrawingTool
     ) {
+        self.configuration = configuration
         self.state = state
         self.tool = tool
 
@@ -776,10 +804,34 @@ private extension DrawingPadCanvasView {
     }
 
     func fittedViewport() throws -> DrawingViewport {
-        try DrawingViewport.fitPage(
+        let usableSize = try currentUsableViewSize()
+        let fitted = try DrawingViewport.fitPage(
             pageSize: configuration.pageSize,
-            viewSize: try currentViewSize(),
+            viewSize: usableSize,
             margin: configuration.margin
+        )
+
+        return try DrawingViewport(
+            pageSize: fitted.pageSize,
+            viewSize: try currentViewSize(),
+            scale: fitted.scale,
+            offset: DrawingVector(
+                dx: fitted.offset.dx + configuration.viewportInsets.left,
+                dy: fitted.offset.dy + configuration.viewportInsets.top
+            )
+        )
+    }
+
+    func currentUsableViewSize() throws -> DrawingSize {
+        try DrawingSize(
+            width: max(
+                Double(bounds.width) - configuration.viewportInsets.left - configuration.viewportInsets.right,
+                1
+            ),
+            height: max(
+                Double(bounds.height) - configuration.viewportInsets.top - configuration.viewportInsets.bottom,
+                1
+            )
         )
     }
 

@@ -91,6 +91,7 @@ public struct DrawingPadCanvas: UIViewRepresentable {
         context: Context
     ) {
         uiView.update(
+            configuration: configuration,
             state: state,
             tool: tool
         )

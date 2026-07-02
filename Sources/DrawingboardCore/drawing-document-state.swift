@@ -45,6 +45,12 @@ public struct DrawingDocumentReducer: Sendable {
                 in: &state
             )
 
+        case .page_deleted(let id):
+            try delete(
+                page: id,
+                in: &state
+            )
+
         case .stroke_began(let stroke):
             try begin(
                 stroke,
@@ -148,6 +154,45 @@ private extension DrawingDocumentReducer {
 
         if !state.document.pages.contains(where: { $0.id == state.document.activePage }) {
             state.document.activePage = page.id
+        }
+    }
+
+    func delete(
+        page id: DrawingPageIdentifier,
+        in state: inout DrawingDocumentState
+    ) throws {
+        guard let index = state.document.pages.firstIndex(where: { $0.id == id }) else {
+            throw DrawingError.missingPage(
+                id.rawValue
+            )
+        }
+
+        guard state.document.pages.count > 1 else {
+            throw DrawingError.cannotDeleteLastPage(
+                id.rawValue
+            )
+        }
+
+        let wasActivePage = state.document.activePage == id
+
+        state.document.pages.remove(
+            at: index
+        )
+
+        state.openStrokes = state.openStrokes.filter { _, stroke in
+            stroke.page != id
+        }
+
+        if wasActivePage {
+            let nextIndex = max(
+                min(
+                    index,
+                    state.document.pages.count - 1
+                ),
+                0
+            )
+
+            state.document.activePage = state.document.pages[nextIndex].id
         }
     }
 

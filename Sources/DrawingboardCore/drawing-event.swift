@@ -31,6 +31,7 @@ public enum DrawingEvent: Sendable, Codable, Hashable {
     case page_selected(DrawingPageIdentifier)
     case page_cleared(DrawingPageIdentifier)
     case page_restored(DrawingPage)
+    case page_deleted(DrawingPageIdentifier)
     case stroke_began(DrawingStroke)
     case stroke_moved(DrawingStrokeMove)
     case stroke_ended(DrawingStrokeEnd)

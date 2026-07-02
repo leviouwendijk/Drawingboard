@@ -6,6 +6,7 @@ import Foundation
 
 public enum DrawingPadSceneError: Error, Sendable, LocalizedError, Equatable {
     case missingScene(String)
+    case cannotDeleteOnlyScene
     case noPreviousScene
     case noNextScene
 
@@ -13,6 +14,9 @@ public enum DrawingPadSceneError: Error, Sendable, LocalizedError, Equatable {
         switch self {
         case .missingScene(let id):
             "Missing scene: \(id)."
+
+        case .cannotDeleteOnlyScene:
+            "Cannot delete the final remaining scene."
 
         case .noPreviousScene:
             "There is no previous scene."
@@ -193,6 +197,15 @@ private actor DrawingPadNetworkDocumentMirror {
             event,
             to: &state
         )
+
+        if case .page_deleted(let page) = event {
+            undoStacks.removeValue(
+                forKey: page
+            )
+            redoStacks.removeValue(
+                forKey: page
+            )
+        }
 
         if let history = historyEntry(
             for: event,
@@ -543,6 +556,46 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
         )
     }
 
+    public func deleteScene(
+        _ page: DrawingPageIdentifier
+    ) async throws {
+        let info = await mirror.sceneInfo()
+
+        guard info.pages.contains(page) else {
+            throw DrawingPadSceneError.missingScene(
+                page.rawValue
+            )
+        }
+
+        guard info.pages.count > 1 else {
+            throw DrawingPadSceneError.cannotDeleteOnlyScene
+        }
+
+        if info.activePage == page,
+           let replacementPage = replacementScene(
+               deleting: page,
+               in: info.pages
+           ) {
+            try await runtime.setPage(
+                replacementPage
+            )
+        }
+
+        let event = DrawingEvent.page_deleted(
+            page
+        )
+
+        try await mirror.applyUser(
+            event
+        )
+
+        try await client.send(
+            .event(
+                event
+            )
+        )
+    }
+
     public func clear() async throws {
         let activePage = await mirror.sceneInfo().activePage
         let event = DrawingEvent.page_cleared(
@@ -578,5 +631,32 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
         try await client.send(
             message
         )
+    }
+}
+
+private extension DrawingPadNetworkSession {
+    func replacementScene(
+        deleting page: DrawingPageIdentifier,
+        in pages: [DrawingPageIdentifier]
+    ) -> DrawingPageIdentifier? {
+        guard let index = pages.firstIndex(
+            of: page
+        ) else {
+            return nil
+        }
+
+        if index + 1 < pages.count {
+            return pages[
+                index + 1
+            ]
+        }
+
+        if index > 0 {
+            return pages[
+                index - 1
+            ]
+        }
+
+        return nil
     }
 }

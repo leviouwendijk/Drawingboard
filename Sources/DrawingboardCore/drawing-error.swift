@@ -7,6 +7,7 @@ public enum DrawingError: Error, Sendable, LocalizedError, Equatable {
     case emptyStroke
     case missingPage(String)
     case duplicatePage(String)
+    case cannotDeleteLastPage(String)
     case missingOpenStroke(String)
     case duplicateOpenStroke(String)
 
@@ -29,6 +30,9 @@ public enum DrawingError: Error, Sendable, LocalizedError, Equatable {
 
         case .duplicatePage(let id):
             "Duplicate page: \(id)."
+
+        case .cannotDeleteLastPage(let id):
+            "Cannot delete the final remaining page: \(id)."
 
         case .missingOpenStroke(let id):
             "Missing open stroke: \(id)."
