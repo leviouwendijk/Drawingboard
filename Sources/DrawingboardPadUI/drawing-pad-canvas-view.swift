@@ -387,7 +387,7 @@ public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    public func gestureRecognizerShouldBegin(
+    public override func gestureRecognizerShouldBegin(
         _ gestureRecognizer: UIGestureRecognizer
     ) -> Bool {
         if gestureRecognizer is UIPinchGestureRecognizer {
