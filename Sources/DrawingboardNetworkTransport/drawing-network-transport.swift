@@ -5,6 +5,7 @@ import Foundation
 public enum DrawingNetworkTransportError: Error, Sendable, LocalizedError, Equatable {
     case invalidPort(UInt16)
     case missingMessage
+    case notConnected
     case connectionFailed(String)
 
     public var errorDescription: String? {
@@ -14,6 +15,9 @@ public enum DrawingNetworkTransportError: Error, Sendable, LocalizedError, Equat
 
         case .missingMessage:
             "Expected a drawing network message, but none was received."
+
+        case .notConnected:
+            "Drawing network client is not connected."
 
         case .connectionFailed(let message):
             "Drawing network connection failed: \(message)"
@@ -382,35 +386,123 @@ public final class DrawingNetworkHostServer: @unchecked Sendable {
 }
 
 public final class DrawingNetworkPadClient: @unchecked Sendable {
-    private let connection: DrawingNetworkMessageConnection
+    private let host: String
+    private let port: UInt16
+    private let lock = NSLock()
+
+    private var connection: DrawingNetworkMessageConnection?
 
     public init(
         host: String,
         port: UInt16
     ) throws {
-        self.connection = try DrawingNetworkMessageConnection(
-            host: host,
-            port: port
-        )
+        self.host = host
+        self.port = port
     }
 
     public func start() {
-        connection.start()
+        // Intentionally empty.
+        // The reconnectable client starts a fresh connection from connect().
     }
 
     public func send(
         _ message: DrawingMessage
     ) async throws {
-        try await connection.send(
-            message
-        )
+        guard let connection = currentConnection() else {
+            throw DrawingNetworkTransportError.notConnected
+        }
+
+        do {
+            try await connection.send(
+                message
+            )
+        } catch {
+            clearConnection(
+                connection
+            )
+
+            throw error
+        }
     }
 
     public func close() {
-        connection.close()
+        let connection = takeConnection()
+
+        connection?.close()
     }
 
     public func connect() async throws {
-        try await connection.startAndWaitUntilReady()
+        let nextConnection = try DrawingNetworkMessageConnection(
+            host: host,
+            port: port
+        )
+
+        replaceConnection(
+            nextConnection
+        )
+
+        do {
+            try await nextConnection.startAndWaitUntilReady()
+        } catch {
+            clearConnection(
+                nextConnection
+            )
+
+            throw error
+        }
+    }
+}
+
+private extension DrawingNetworkPadClient {
+    func currentConnection() -> DrawingNetworkMessageConnection? {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        return connection
+    }
+
+    func replaceConnection(
+        _ nextConnection: DrawingNetworkMessageConnection
+    ) {
+        let previousConnection: DrawingNetworkMessageConnection?
+
+        lock.lock()
+        previousConnection = connection
+        connection = nextConnection
+        lock.unlock()
+
+        previousConnection?.close()
+    }
+
+    func takeConnection() -> DrawingNetworkMessageConnection? {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        let currentConnection = connection
+        connection = nil
+
+        return currentConnection
+    }
+
+    func clearConnection(
+        _ failedConnection: DrawingNetworkMessageConnection
+    ) {
+        lock.lock()
+
+        let shouldClear = connection === failedConnection
+
+        if shouldClear {
+            connection = nil
+        }
+
+        lock.unlock()
+
+        if shouldClear {
+            failedConnection.close()
+        }
     }
 }

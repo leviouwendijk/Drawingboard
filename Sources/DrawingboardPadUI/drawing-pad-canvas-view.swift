@@ -2,8 +2,8 @@
 
 import DrawingboardCore
 import DrawingboardPadRuntime
-import DrawingboardRendering
 import DrawingboardProtocol
+import DrawingboardRendering
 import Foundation
 import UIKit
 
@@ -24,31 +24,42 @@ public struct DrawingPadCanvasConfiguration: Sendable, Hashable {
 }
 
 @MainActor
-public final class DrawingPadCanvasView: UIView {
+public final class DrawingPadCanvasView: UIView, UIGestureRecognizerDelegate {
     private let runtime: DrawingPadAppRuntime
     private let configuration: DrawingPadCanvasConfiguration
     private let onError: (Error) -> Void
 
     private var state: DrawingDocumentState?
+    private var viewport: DrawingViewport?
+    private var pinchBaseViewport: DrawingViewport?
+    private var panBaseViewport: DrawingViewport?
+
     private weak var activeTouch: UITouch?
     private var pendingOperation: Task<Void, Never>?
+
+    private var tool: DrawingTool
+    private var erasedStrokeIDsDuringActiveTouch: Set<DrawingStrokeIdentifier> = []
 
     public init(
         runtime: DrawingPadAppRuntime,
         configuration: DrawingPadCanvasConfiguration,
+        tool: DrawingTool,
         onError: @escaping (Error) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.configuration = configuration
+        self.tool = tool
         self.onError = onError
 
         super.init(
             frame: .zero
         )
 
-        isMultipleTouchEnabled = false
+        isMultipleTouchEnabled = true
         backgroundColor = .white
         contentMode = .redraw
+
+        installGestureRecognizers()
     }
 
     public required init?(
@@ -58,10 +69,39 @@ public final class DrawingPadCanvasView: UIView {
     }
 
     public func update(
-        state: DrawingDocumentState?
+        state: DrawingDocumentState?,
+        tool: DrawingTool
     ) {
         self.state = state
+        self.tool = tool
+
         setNeedsDisplay()
+    }
+
+    public func apply(
+        command: DrawingPadCanvasCommand
+    ) {
+        do {
+            switch command.kind {
+            case .zoomIn:
+                try zoom(
+                    by: 1.25
+                )
+
+            case .zoomOut:
+                try zoom(
+                    by: 0.8
+                )
+
+            case .fitPage:
+                viewport = try fittedViewport()
+                setNeedsDisplay()
+            }
+        } catch {
+            onError(
+                error
+            )
+        }
     }
 
     public override func draw(
@@ -82,24 +122,8 @@ public final class DrawingPadCanvasView: UIView {
 
         do {
             let viewport = try currentViewport()
-            let origin = viewport.pageToView(
-                DrawingCoordinate(
-                    x: 0,
-                    y: 0
-                )
-            )
-            let farCorner = viewport.pageToView(
-                DrawingCoordinate(
-                    x: configuration.pageSize.width,
-                    y: configuration.pageSize.height
-                )
-            )
-
-            let pageRect = CGRect(
-                x: origin.x,
-                y: origin.y,
-                width: farCorner.x - origin.x,
-                height: farCorner.y - origin.y
+            let pageRect = pageRect(
+                viewport: viewport
             )
 
             UIColor(
@@ -110,6 +134,18 @@ public final class DrawingPadCanvasView: UIView {
                 pageRect
             )
 
+            context.saveGState()
+            context.clip(
+                to: pageRect
+            )
+
+            try drawCommands(
+                context: context,
+                viewport: viewport
+            )
+
+            context.restoreGState()
+
             UIColor(
                 white: 0.82,
                 alpha: 1
@@ -117,11 +153,6 @@ public final class DrawingPadCanvasView: UIView {
             context.stroke(
                 pageRect,
                 width: 1
-            )
-
-            try drawCommands(
-                context: context,
-                viewport: viewport
             )
         } catch {
             onError(
@@ -132,13 +163,30 @@ public final class DrawingPadCanvasView: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        setNeedsDisplay()
+
+        do {
+            _ = try currentViewport()
+
+            setNeedsDisplay()
+        } catch {
+            onError(
+                error
+            )
+        }
     }
 
     public override func touchesBegan(
         _ touches: Set<UITouch>,
         with event: UIEvent?
     ) {
+        if isMultiTouch(
+            event: event,
+            fallbackTouches: touches
+        ) {
+            cancelActiveStroke()
+            return
+        }
+
         guard activeTouch == nil,
               let touch = acceptedTouch(
                 from: touches
@@ -146,13 +194,25 @@ public final class DrawingPadCanvasView: UIView {
             return
         }
 
-        activeTouch = touch
-
         do {
-            let point = try drawingPoint(
+            guard let point = try drawingPoint(
                 from: touch,
                 predicted: false
-            )
+            ) else {
+                return
+            }
+
+            activeTouch = touch
+
+            if tool.kind == .eraser {
+                erasedStrokeIDsDuringActiveTouch.removeAll()
+
+                try erase(
+                    at: point
+                )
+
+                return
+            }
 
             perform {
                 try await self.runtime.begin(
@@ -177,6 +237,14 @@ public final class DrawingPadCanvasView: UIView {
             return
         }
 
+        if isMultiTouch(
+            event: event,
+            fallbackTouches: touches
+        ) {
+            cancelActiveStroke()
+            return
+        }
+
         do {
             let sourceTouches = event?.coalescedTouches(
                 for: activeTouch
@@ -184,11 +252,25 @@ public final class DrawingPadCanvasView: UIView {
                 activeTouch,
             ]
 
-            let points = try sourceTouches.map { touch in
+            let points = try sourceTouches.compactMap { touch in
                 try drawingPoint(
                     from: touch,
                     predicted: false
                 )
+            }
+
+            guard !points.isEmpty else {
+                return
+            }
+
+            if tool.kind == .eraser {
+                for point in points {
+                    try erase(
+                        at: point
+                    )
+                }
+
+                return
             }
 
             perform {
@@ -214,6 +296,12 @@ public final class DrawingPadCanvasView: UIView {
             return
         }
 
+        if tool.kind == .eraser {
+            erasedStrokeIDsDuringActiveTouch.removeAll()
+            self.activeTouch = nil
+            return
+        }
+
         do {
             let sourceTouches = event?.coalescedTouches(
                 for: activeTouch
@@ -221,13 +309,14 @@ public final class DrawingPadCanvasView: UIView {
                 activeTouch,
             ]
 
-            let points = try sourceTouches.map { touch in
+            let points = try sourceTouches.compactMap { touch in
                 try drawingPoint(
                     from: touch,
                     predicted: false
                 )
             }
 
+            erasedStrokeIDsDuringActiveTouch.removeAll()
             self.activeTouch = nil
 
             perform {
@@ -236,7 +325,9 @@ public final class DrawingPadCanvasView: UIView {
                 )
             }
         } catch {
+            erasedStrokeIDsDuringActiveTouch.removeAll()
             self.activeTouch = nil
+
             onError(
                 error
             )
@@ -254,15 +345,146 @@ public final class DrawingPadCanvasView: UIView {
             return
         }
 
+        erasedStrokeIDsDuringActiveTouch.removeAll()
         self.activeTouch = nil
+
+        if tool.kind == .eraser {
+            return
+        }
 
         perform {
             try await self.runtime.cancel()
         }
     }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        touch.type != .pencil
+    }
 }
 
 private extension DrawingPadCanvasView {
+    func installGestureRecognizers() {
+        let pinch = UIPinchGestureRecognizer(
+            target: self,
+            action: #selector(handlePinch)
+        )
+        pinch.delegate = self
+        pinch.cancelsTouchesInView = false
+
+        addGestureRecognizer(
+            pinch
+        )
+
+        let pan = UIPanGestureRecognizer(
+            target: self,
+            action: #selector(handlePan)
+        )
+        pan.delegate = self
+        pan.minimumNumberOfTouches = 2
+        pan.maximumNumberOfTouches = 2
+        pan.cancelsTouchesInView = false
+
+        addGestureRecognizer(
+            pan
+        )
+    }
+
+    @objc
+    func handlePinch(
+        _ recognizer: UIPinchGestureRecognizer
+    ) {
+        do {
+            switch recognizer.state {
+            case .began:
+                cancelActiveStroke()
+
+                pinchBaseViewport = try currentViewport()
+
+            case .changed:
+                let base = try pinchBaseViewport ?? currentViewport()
+                let location = recognizer.location(
+                    in: self
+                )
+
+                viewport = try zoomedViewport(
+                    base: base,
+                    requestedScale: base.scale * Double(
+                        recognizer.scale
+                    ),
+                    anchor: DrawingCoordinate(
+                        x: location.x,
+                        y: location.y
+                    )
+                )
+
+                setNeedsDisplay()
+
+            case .ended,
+                 .cancelled,
+                 .failed:
+                pinchBaseViewport = nil
+
+            default:
+                break
+            }
+        } catch {
+            onError(
+                error
+            )
+        }
+    }
+
+    @objc
+    func handlePan(
+        _ recognizer: UIPanGestureRecognizer
+    ) {
+        do {
+            switch recognizer.state {
+            case .began:
+                cancelActiveStroke()
+
+                panBaseViewport = try currentViewport()
+
+            case .changed:
+                let base = try panBaseViewport ?? currentViewport()
+                let translation = recognizer.translation(
+                    in: self
+                )
+
+                viewport = try base.panned(
+                    by: DrawingVector(
+                        dx: translation.x,
+                        dy: translation.y
+                    )
+                )
+
+                setNeedsDisplay()
+
+            case .ended,
+                 .cancelled,
+                 .failed:
+                panBaseViewport = nil
+
+            default:
+                break
+            }
+        } catch {
+            onError(
+                error
+            )
+        }
+    }
+
     func drawCommands(
         context: CGContext,
         viewport: DrawingViewport
@@ -333,6 +555,7 @@ private extension DrawingPadCanvasView {
         context.strokePath()
         context.restoreGState()
     }
+
     func acceptedTouch(
         from touches: Set<UITouch>
     ) -> UITouch? {
@@ -349,7 +572,7 @@ private extension DrawingPadCanvasView {
     func drawingPoint(
         from touch: UITouch,
         predicted: Bool
-    ) throws -> DrawingPoint {
+    ) throws -> DrawingPoint? {
         let location = touch.location(
             in: self
         )
@@ -361,11 +584,19 @@ private extension DrawingPadCanvasView {
             )
         )
 
+        guard isInsidePage(
+            pageCoordinate
+        ) else {
+            return nil
+        }
+
         return DrawingPoint(
             x: pageCoordinate.x,
             y: pageCoordinate.y,
             time: touch.timestamp,
-            force: touch.force,
+            force: normalizedForce(
+                from: touch
+            ),
             altitude: touch.altitudeAngle,
             azimuth: touch.azimuthAngle(
                 in: self
@@ -374,8 +605,86 @@ private extension DrawingPadCanvasView {
         )
     }
 
+    func normalizedForce(
+        from touch: UITouch
+    ) -> Double? {
+        guard touch.maximumPossibleForce > 0 else {
+            return nil
+        }
+
+        let normalized = touch.force / touch.maximumPossibleForce
+
+        return min(
+            max(
+                normalized,
+                0
+            ),
+            1
+        )
+    }
+
+    func isInsidePage(
+        _ coordinate: DrawingCoordinate
+    ) -> Bool {
+        coordinate.x >= 0 &&
+        coordinate.y >= 0 &&
+        coordinate.x <= configuration.pageSize.width &&
+        coordinate.y <= configuration.pageSize.height
+    }
+
+    func pageRect(
+        viewport: DrawingViewport
+    ) -> CGRect {
+        let origin = viewport.pageToView(
+            DrawingCoordinate(
+                x: 0,
+                y: 0
+            )
+        )
+        let farCorner = viewport.pageToView(
+            DrawingCoordinate(
+                x: configuration.pageSize.width,
+                y: configuration.pageSize.height
+            )
+        )
+
+        return CGRect(
+            x: origin.x,
+            y: origin.y,
+            width: farCorner.x - origin.x,
+            height: farCorner.y - origin.y
+        )
+    }
+
     func currentViewport() throws -> DrawingViewport {
-        let viewSize = try DrawingSize(
+        let viewSize = try currentViewSize()
+
+        if let viewport,
+           viewport.viewSize == viewSize {
+            return viewport
+        }
+
+        let fitted = try DrawingViewport.fitPage(
+            pageSize: configuration.pageSize,
+            viewSize: viewSize,
+            margin: configuration.margin
+        )
+
+        viewport = fitted
+
+        return fitted
+    }
+
+    func fittedViewport() throws -> DrawingViewport {
+        try DrawingViewport.fitPage(
+            pageSize: configuration.pageSize,
+            viewSize: try currentViewSize(),
+            margin: configuration.margin
+        )
+    }
+
+    func currentViewSize() throws -> DrawingSize {
+        try DrawingSize(
             width: max(
                 Double(bounds.width),
                 1
@@ -385,11 +694,224 @@ private extension DrawingPadCanvasView {
                 1
             )
         )
+    }
 
-        return try DrawingViewport.fitPage(
-            pageSize: configuration.pageSize,
-            viewSize: viewSize,
-            margin: configuration.margin
+    func zoom(
+        by factor: Double
+    ) throws {
+        let base = try currentViewport()
+        let center = DrawingCoordinate(
+            x: bounds.midX,
+            y: bounds.midY
+        )
+        let requestedScale = base.scale * factor
+
+        viewport = try zoomedViewport(
+            base: base,
+            requestedScale: requestedScale,
+            anchor: center
+        )
+
+        setNeedsDisplay()
+    }
+
+    func zoomedViewport(
+        base: DrawingViewport,
+        requestedScale: Double,
+        anchor: DrawingCoordinate
+    ) throws -> DrawingViewport {
+        let fitted = try fittedViewport()
+        let minimumScale = fitted.scale * 0.5
+        let maximumScale = fitted.scale * 8
+
+        let clampedScale = min(
+            max(
+                requestedScale,
+                minimumScale
+            ),
+            maximumScale
+        )
+
+        let factor = clampedScale / base.scale
+
+        return try base.zoomed(
+            by: factor,
+            around: anchor
+        )
+    }
+
+    func isMultiTouch(
+        event: UIEvent?,
+        fallbackTouches: Set<UITouch>
+    ) -> Bool {
+        let activeTouchCount = event?.allTouches?.filter { touch in
+            touch.phase != .ended &&
+            touch.phase != .cancelled
+        }.count ?? fallbackTouches.count
+
+        return activeTouchCount > 1
+    }
+
+    func cancelActiveStroke() {
+        guard activeTouch != nil else {
+            return
+        }
+
+        let wasErasing = tool.kind == .eraser
+
+        activeTouch = nil
+        erasedStrokeIDsDuringActiveTouch.removeAll()
+
+        guard !wasErasing else {
+            return
+        }
+
+        perform {
+            try await self.runtime.cancel()
+        }
+    }
+
+    func erase(
+        at point: DrawingPoint
+    ) throws {
+        guard let stroke = try nearestFinishedStroke(
+            to: point
+        ) else {
+            return
+        }
+
+        guard !erasedStrokeIDsDuringActiveTouch.contains(
+            stroke
+        ) else {
+            return
+        }
+
+        erasedStrokeIDsDuringActiveTouch.insert(
+            stroke
+        )
+
+        perform {
+            try await self.runtime.remove(
+                stroke: stroke
+            )
+        }
+    }
+
+    func nearestFinishedStroke(
+        to point: DrawingPoint
+    ) throws -> DrawingStrokeIdentifier? {
+        guard let state,
+              let page = state.document.pages.first(where: { page in
+                  page.id == state.document.activePage
+              }) else {
+            return nil
+        }
+
+        let viewport = try currentViewport()
+        let threshold = max(
+            tool.width * 1.75,
+            18 / viewport.scale
+        )
+
+        var bestStroke: DrawingStrokeIdentifier?
+        var bestDistance = Double.greatestFiniteMagnitude
+
+        for stroke in page.strokes {
+            let distance = distance(
+                from: point,
+                to: stroke
+            )
+
+            if distance < bestDistance {
+                bestDistance = distance
+                bestStroke = stroke.id
+            }
+        }
+
+        guard bestDistance <= threshold else {
+            return nil
+        }
+
+        return bestStroke
+    }
+
+    func distance(
+        from point: DrawingPoint,
+        to stroke: DrawingStroke
+    ) -> Double {
+        guard let first = stroke.points.first else {
+            return Double.greatestFiniteMagnitude
+        }
+
+        guard stroke.points.count > 1 else {
+            return distance(
+                from: point,
+                to: first
+            )
+        }
+
+        var best = Double.greatestFiniteMagnitude
+
+        for index in 1..<stroke.points.count {
+            best = min(
+                best,
+                distance(
+                    from: point,
+                    toSegmentStart: stroke.points[index - 1],
+                    end: stroke.points[index]
+                )
+            )
+        }
+
+        return best
+    }
+
+    func distance(
+        from point: DrawingPoint,
+        to other: DrawingPoint
+    ) -> Double {
+        hypot(
+            point.x - other.x,
+            point.y - other.y
+        )
+    }
+
+    func distance(
+        from point: DrawingPoint,
+        toSegmentStart start: DrawingPoint,
+        end: DrawingPoint
+    ) -> Double {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+
+        let lengthSquared = dx * dx + dy * dy
+
+        guard lengthSquared > 0 else {
+            return distance(
+                from: point,
+                to: start
+            )
+        }
+
+        let rawT = (
+            (point.x - start.x) * dx +
+            (point.y - start.y) * dy
+        ) / lengthSquared
+
+        let t = min(
+            max(
+                rawT,
+                0
+            ),
+            1
+        )
+
+        let projectionX = start.x + t * dx
+        let projectionY = start.y + t * dy
+
+        return hypot(
+            point.x - projectionX,
+            point.y - projectionY
         )
     }
 

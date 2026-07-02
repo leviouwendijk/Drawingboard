@@ -265,7 +265,6 @@ private extension DrawingDocumentState {
 public final class DrawingPadNetworkSession: @unchecked Sendable {
     public let page: DrawingPageIdentifier
     public let pageSize: DrawingSize
-    public let tool: DrawingTool
     public let client: DrawingNetworkPadClient
     public let runtime: DrawingPadAppRuntime
     public let states: AsyncStream<DrawingDocumentState>
@@ -283,7 +282,6 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
     ) throws {
         self.page = page
         self.pageSize = pageSize
-        self.tool = tool
 
         let client = try DrawingNetworkPadClient(
             host: host,
@@ -327,10 +325,26 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
 
     public func connect() async throws {
         try await client.connect()
+
+        let snapshot = await mirror.snapshot()
+
+        try await client.send(
+            .snapshot(
+                snapshot.document
+            )
+        )
     }
 
     public func snapshot() async -> DrawingDocumentState {
         await mirror.snapshot()
+    }
+
+    public func setTool(
+        _ tool: DrawingTool
+    ) async throws {
+        try await runtime.setTool(
+            tool
+        )
     }
 
     public func clear() async throws {

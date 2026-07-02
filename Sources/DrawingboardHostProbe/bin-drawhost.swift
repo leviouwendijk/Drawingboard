@@ -328,7 +328,6 @@ private extension DrawingboardHostProbe {
 
         try await send(
             try batcher.end(
-                stroke: stroke,
                 points: [
                     DrawingPoint(
                         x: 920,

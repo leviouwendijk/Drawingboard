@@ -26,6 +26,18 @@ public actor DrawingPadAppRuntime {
         batcher.openStroke
     }
 
+    public func tool() -> DrawingTool {
+        batcher.tool
+    }
+
+    public func setTool(
+        _ tool: DrawingTool
+    ) throws {
+        try batcher.setTool(
+            tool
+        )
+    }
+
     public func begin(
         stroke id: DrawingStrokeIdentifier = .next(),
         at point: DrawingPoint
@@ -70,6 +82,20 @@ public actor DrawingPadAppRuntime {
         try await send(
             [
                 try batcher.cancel(),
+            ]
+        )
+    }
+
+    public func remove(
+        stroke id: DrawingStrokeIdentifier
+    ) async throws {
+        try await send(
+            [
+                .event(
+                    .stroke_removed(
+                        id
+                    )
+                ),
             ]
         )
     }

@@ -3,31 +3,23 @@ import DrawingboardProtocol
 import Foundation
 
 public enum DrawingPadStrokeBatcherError: Error, Sendable, LocalizedError, Equatable {
-    case invalidMaximumPointCount(Int)
     case strokeAlreadyOpen(String)
     case missingOpenStroke
-    case mismatchedStroke(expected: String, actual: String)
 
     public var errorDescription: String? {
         switch self {
-        case .invalidMaximumPointCount(let count):
-            "Invalid maximum point count: \(count)."
-
-        case .strokeAlreadyOpen(let stroke):
-            "Stroke is already open: \(stroke)."
+        case .strokeAlreadyOpen(let id):
+            "A stroke is already open: \(id)."
 
         case .missingOpenStroke:
-            "Cannot batch points without an open stroke."
-
-        case .mismatchedStroke(let expected, let actual):
-            "Mismatched stroke. Expected \(expected), received \(actual)."
+            "No stroke is currently open."
         }
     }
 }
 
 public struct DrawingPadStrokeBatcher: Sendable {
     public let page: DrawingPageIdentifier
-    public let tool: DrawingTool
+    public private(set) var tool: DrawingTool
     public let maximumPointCount: Int
 
     public private(set) var openStroke: DrawingStrokeIdentifier?
@@ -36,11 +28,11 @@ public struct DrawingPadStrokeBatcher: Sendable {
     public init(
         page: DrawingPageIdentifier,
         tool: DrawingTool,
-        maximumPointCount: Int = 16
+        maximumPointCount: Int = 8
     ) throws {
         guard maximumPointCount > 0 else {
-            throw DrawingPadStrokeBatcherError.invalidMaximumPointCount(
-                maximumPointCount
+            throw DrawingError.invalidStrokeWidth(
+                Double(maximumPointCount)
             )
         }
 
@@ -49,6 +41,18 @@ public struct DrawingPadStrokeBatcher: Sendable {
         self.maximumPointCount = maximumPointCount
         self.openStroke = nil
         self.pendingPoints = []
+    }
+
+    public mutating func setTool(
+        _ tool: DrawingTool
+    ) throws {
+        guard openStroke == nil else {
+            throw DrawingPadStrokeBatcherError.strokeAlreadyOpen(
+                openStroke?.rawValue ?? ""
+            )
+        }
+
+        self.tool = tool
     }
 
     public mutating func begin(
@@ -62,18 +66,20 @@ public struct DrawingPadStrokeBatcher: Sendable {
         }
 
         openStroke = id
-        pendingPoints.removeAll()
+        pendingPoints = []
+
+        let stroke = try DrawingStroke(
+            id: id,
+            page: page,
+            tool: tool,
+            points: [
+                point,
+            ]
+        )
 
         return .event(
             .stroke_began(
-                try DrawingStroke(
-                    id: id,
-                    page: page,
-                    tool: tool,
-                    points: [
-                        point,
-                    ]
-                )
+                stroke
             )
         )
     }
@@ -93,9 +99,8 @@ public struct DrawingPadStrokeBatcher: Sendable {
             contentsOf: points
         )
 
-        return makeMoveMessages(
-            stroke: stroke,
-            flushingFullBatchesOnly: true
+        return flushFullBatches(
+            stroke: stroke
         )
     }
 
@@ -124,60 +129,43 @@ public struct DrawingPadStrokeBatcher: Sendable {
     }
 
     public mutating func end(
-        stroke explicitStroke: DrawingStrokeIdentifier? = nil,
         points: [DrawingPoint] = []
     ) throws -> [DrawingMessage] {
         guard let stroke = openStroke else {
             throw DrawingPadStrokeBatcherError.missingOpenStroke
         }
 
-        if let explicitStroke,
-           explicitStroke != stroke {
-            throw DrawingPadStrokeBatcherError.mismatchedStroke(
-                expected: stroke.rawValue,
-                actual: explicitStroke.rawValue
+        if !points.isEmpty {
+            pendingPoints.append(
+                contentsOf: points
             )
         }
 
-        pendingPoints.append(
-            contentsOf: points
+        var messages = flushFullBatches(
+            stroke: stroke
         )
 
-        var messages = makeMoveMessages(
-            stroke: stroke,
-            flushingFullBatchesOnly: false
-        )
+        let remainingPoints = pendingPoints
+        pendingPoints.removeAll()
+        openStroke = nil
 
         messages.append(
             .event(
                 .stroke_ended(
                     DrawingStrokeEnd(
                         stroke: stroke,
-                        points: pendingPoints
+                        points: remainingPoints
                     )
                 )
             )
         )
 
-        pendingPoints.removeAll()
-        openStroke = nil
-
         return messages
     }
 
-    public mutating func cancel(
-        stroke explicitStroke: DrawingStrokeIdentifier? = nil
-    ) throws -> DrawingMessage {
+    public mutating func cancel() throws -> DrawingMessage {
         guard let stroke = openStroke else {
             throw DrawingPadStrokeBatcherError.missingOpenStroke
-        }
-
-        if let explicitStroke,
-           explicitStroke != stroke {
-            throw DrawingPadStrokeBatcherError.mismatchedStroke(
-                expected: stroke.rawValue,
-                actual: explicitStroke.rawValue
-            )
         }
 
         pendingPoints.removeAll()
@@ -189,15 +177,15 @@ public struct DrawingPadStrokeBatcher: Sendable {
             )
         )
     }
+}
 
-    private mutating func makeMoveMessages(
-        stroke: DrawingStrokeIdentifier,
-        flushingFullBatchesOnly: Bool
+private extension DrawingPadStrokeBatcher {
+    mutating func flushFullBatches(
+        stroke: DrawingStrokeIdentifier
     ) -> [DrawingMessage] {
         var messages: [DrawingMessage] = []
 
-        while pendingPoints.count > maximumPointCount ||
-              flushingFullBatchesOnly && pendingPoints.count >= maximumPointCount {
+        while pendingPoints.count >= maximumPointCount {
             let batch = Array(
                 pendingPoints.prefix(
                     maximumPointCount
