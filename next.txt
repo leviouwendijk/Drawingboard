@@ -13,3 +13,11 @@
 
 > scene switching (next / previsous, maybe even indexed navgiation menu (horizontal, scrollable view))
  -- helps going back to a preivous 'slide' on presentation
+
+
+next:
+
+1. convert the current ipad controls menu to be laid out more horizontally at the top there, because it is kind of blocking a chunk of the canvas now
+2. add support for scenes state, switching back and forward, and a selection menu to jump directly to a specific index scene (hidden but option to select a slide)? perhaps even exporting the slides to some image format or pdf or something? 
+
+

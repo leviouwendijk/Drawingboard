@@ -4,7 +4,70 @@ import DrawingboardPadRuntime
 import DrawingboardProtocol
 import Foundation
 
+public enum DrawingPadSceneError: Error, Sendable, LocalizedError, Equatable {
+    case missingScene(String)
+    case noPreviousScene
+    case noNextScene
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingScene(let id):
+            "Missing scene: \(id)."
+
+        case .noPreviousScene:
+            "There is no previous scene."
+
+        case .noNextScene:
+            "There is no next scene."
+        }
+    }
+}
+
+public struct DrawingPadSceneInfo: Sendable, Hashable {
+    public let pages: [DrawingPageIdentifier]
+    public let activePage: DrawingPageIdentifier
+
+    public init(
+        pages: [DrawingPageIdentifier],
+        activePage: DrawingPageIdentifier
+    ) {
+        self.pages = pages
+        self.activePage = activePage
+    }
+
+    public var activeIndex: Int {
+        pages.firstIndex(
+            of: activePage
+        ) ?? 0
+    }
+
+    public var count: Int {
+        pages.count
+    }
+
+    public var previousPage: DrawingPageIdentifier? {
+        guard activeIndex > 0 else {
+            return nil
+        }
+
+        return pages[
+            activeIndex - 1
+        ]
+    }
+
+    public var nextPage: DrawingPageIdentifier? {
+        guard activeIndex + 1 < pages.count else {
+            return nil
+        }
+
+        return pages[
+            activeIndex + 1
+        ]
+    }
+}
+
 private struct DrawingPadHistoryEntry: Sendable {
+    let page: DrawingPageIdentifier
     let undo: DrawingEvent
     let redo: DrawingEvent
 }
@@ -52,8 +115,8 @@ private actor DrawingPadNetworkDocumentMirror {
     private let reducer: DrawingDocumentReducer
     private let broadcaster: DrawingPadStateBroadcaster
 
-    private var undoStack: [DrawingPadHistoryEntry]
-    private var redoStack: [DrawingPadHistoryEntry]
+    private var undoStacks: [DrawingPageIdentifier: [DrawingPadHistoryEntry]]
+    private var redoStacks: [DrawingPageIdentifier: [DrawingPadHistoryEntry]]
 
     init(
         page: DrawingPageIdentifier,
@@ -71,8 +134,8 @@ private actor DrawingPadNetworkDocumentMirror {
         )
         self.reducer = reducer
         self.broadcaster = broadcaster
-        self.undoStack = []
-        self.redoStack = []
+        self.undoStacks = [:]
+        self.redoStacks = [:]
 
         broadcaster.yield(
             state
@@ -81,6 +144,21 @@ private actor DrawingPadNetworkDocumentMirror {
 
     func snapshot() -> DrawingDocumentState {
         state
+    }
+
+    func sceneInfo() -> DrawingPadSceneInfo {
+        DrawingPadSceneInfo(
+            pages: state.document.pages.map(\.id),
+            activePage: state.document.activePage
+        )
+    }
+
+    func contains(
+        page id: DrawingPageIdentifier
+    ) -> Bool {
+        state.document.pages.contains { page in
+            page.id == id
+        }
     }
 
     func applyUser(
@@ -96,8 +174,8 @@ private actor DrawingPadNetworkDocumentMirror {
             state = DrawingDocumentState(
                 document: document
             )
-            undoStack.removeAll()
-            redoStack.removeAll()
+            undoStacks.removeAll()
+            redoStacks.removeAll()
             publish()
 
         case .hello,
@@ -121,26 +199,32 @@ private actor DrawingPadNetworkDocumentMirror {
             previousState: previousState,
             currentState: state
         ) {
-            undoStack.append(
+            appendHistory(
                 history
             )
-            redoStack.removeAll()
         }
 
         publish()
     }
 
-    func makeUndoMessage() throws -> DrawingMessage? {
-        guard let entry = undoStack.popLast() else {
+    func makeUndoMessage(
+        for page: DrawingPageIdentifier? = nil
+    ) throws -> DrawingMessage? {
+        let targetPage = page ?? state.document.activePage
+
+        guard var stack = undoStacks[targetPage],
+              let entry = stack.popLast() else {
             return nil
         }
+
+        undoStacks[targetPage] = stack
 
         try reducer.apply(
             entry.undo,
             to: &state
         )
 
-        redoStack.append(
+        redoStacks[targetPage, default: []].append(
             entry
         )
 
@@ -151,17 +235,24 @@ private actor DrawingPadNetworkDocumentMirror {
         )
     }
 
-    func makeRedoMessage() throws -> DrawingMessage? {
-        guard let entry = redoStack.popLast() else {
+    func makeRedoMessage(
+        for page: DrawingPageIdentifier? = nil
+    ) throws -> DrawingMessage? {
+        let targetPage = page ?? state.document.activePage
+
+        guard var stack = redoStacks[targetPage],
+              let entry = stack.popLast() else {
             return nil
         }
+
+        redoStacks[targetPage] = stack
 
         try reducer.apply(
             entry.redo,
             to: &state
         )
 
-        undoStack.append(
+        undoStacks[targetPage, default: []].append(
             entry
         )
 
@@ -180,6 +271,15 @@ private extension DrawingPadNetworkDocumentMirror {
         )
     }
 
+    func appendHistory(
+        _ history: DrawingPadHistoryEntry
+    ) {
+        undoStacks[history.page, default: []].append(
+            history
+        )
+        redoStacks[history.page] = []
+    }
+
     func historyEntry(
         for event: DrawingEvent,
         previousState: DrawingDocumentState,
@@ -194,6 +294,7 @@ private extension DrawingPadNetworkDocumentMirror {
             }
 
             return DrawingPadHistoryEntry(
+                page: stroke.page,
                 undo: .stroke_removed(
                     stroke.id
                 ),
@@ -210,6 +311,7 @@ private extension DrawingPadNetworkDocumentMirror {
             }
 
             return DrawingPadHistoryEntry(
+                page: stroke.page,
                 undo: .stroke_restored(
                     stroke
                 ),
@@ -226,6 +328,7 @@ private extension DrawingPadNetworkDocumentMirror {
             }
 
             return DrawingPadHistoryEntry(
+                page: page,
                 undo: .page_restored(
                     previousPage
                 ),
@@ -339,6 +442,10 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
         await mirror.snapshot()
     }
 
+    public func sceneInfo() async -> DrawingPadSceneInfo {
+        await mirror.sceneInfo()
+    }
+
     public func setTool(
         _ tool: DrawingTool
     ) async throws {
@@ -347,9 +454,99 @@ public final class DrawingPadNetworkSession: @unchecked Sendable {
         )
     }
 
-    public func clear() async throws {
-        let event = DrawingEvent.page_cleared(
+    public func createScene() async throws {
+        let scene = DrawingPageIdentifier.next()
+        let page = DrawingPage(
+            id: scene,
+            size: pageSize
+        )
+
+        try await runtime.setPage(
+            scene
+        )
+
+        let createEvent = DrawingEvent.page_created(
             page
+        )
+        let selectEvent = DrawingEvent.page_selected(
+            scene
+        )
+
+        try await mirror.applyUser(
+            createEvent
+        )
+        try await mirror.applyUser(
+            selectEvent
+        )
+
+        try await client.send(
+            .event(
+                createEvent
+            )
+        )
+        try await client.send(
+            .event(
+                selectEvent
+            )
+        )
+    }
+
+    public func selectScene(
+        _ page: DrawingPageIdentifier
+    ) async throws {
+        guard await mirror.contains(page: page) else {
+            throw DrawingPadSceneError.missingScene(
+                page.rawValue
+            )
+        }
+
+        try await runtime.setPage(
+            page
+        )
+
+        let event = DrawingEvent.page_selected(
+            page
+        )
+
+        try await mirror.applyUser(
+            event
+        )
+
+        try await client.send(
+            .event(
+                event
+            )
+        )
+    }
+
+    public func selectPreviousScene() async throws {
+        let info = await mirror.sceneInfo()
+
+        guard let previousPage = info.previousPage else {
+            throw DrawingPadSceneError.noPreviousScene
+        }
+
+        try await selectScene(
+            previousPage
+        )
+    }
+
+    public func selectNextScene() async throws {
+        let info = await mirror.sceneInfo()
+
+        guard let nextPage = info.nextPage else {
+            throw DrawingPadSceneError.noNextScene
+        }
+
+        try await selectScene(
+            nextPage
+        )
+    }
+
+    public func clear() async throws {
+        let activePage = await mirror.sceneInfo().activePage
+        let event = DrawingEvent.page_cleared(
+            activePage
         )
 
         try await mirror.applyUser(

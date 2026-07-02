@@ -18,7 +18,7 @@ public enum DrawingPadStrokeBatcherError: Error, Sendable, LocalizedError, Equat
 }
 
 public struct DrawingPadStrokeBatcher: Sendable {
-    public let page: DrawingPageIdentifier
+    public private(set) var page: DrawingPageIdentifier
     public private(set) var tool: DrawingTool
     public let maximumPointCount: Int
 
@@ -41,6 +41,18 @@ public struct DrawingPadStrokeBatcher: Sendable {
         self.maximumPointCount = maximumPointCount
         self.openStroke = nil
         self.pendingPoints = []
+    }
+
+    public mutating func setPage(
+        _ page: DrawingPageIdentifier
+    ) throws {
+        guard openStroke == nil else {
+            throw DrawingPadStrokeBatcherError.strokeAlreadyOpen(
+                openStroke?.rawValue ?? ""
+            )
+        }
+
+        self.page = page
     }
 
     public mutating func setTool(

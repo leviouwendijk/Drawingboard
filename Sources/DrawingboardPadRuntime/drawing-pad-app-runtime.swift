@@ -22,12 +22,24 @@ public actor DrawingPadAppRuntime {
         self.sink = sink
     }
 
+    public func page() -> DrawingPageIdentifier {
+        batcher.page
+    }
+
     public func openStroke() -> DrawingStrokeIdentifier? {
         batcher.openStroke
     }
 
     public func tool() -> DrawingTool {
         batcher.tool
+    }
+
+    public func setPage(
+        _ page: DrawingPageIdentifier
+    ) throws {
+        try batcher.setPage(
+            page
+        )
     }
 
     public func setTool(
