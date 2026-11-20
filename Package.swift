@@ -51,10 +51,6 @@ let package = Package(
             targets: ["DrawingboardPadNetworkRuntime"]
         ),
         .executable(
-            name: "drawtest",
-            targets: ["DrawingboardTestFlows"]
-        ),
-        .executable(
             name: "drawhost",
             targets: ["DrawingboardHostProbe"]
         ),
@@ -78,10 +74,6 @@ let package = Package(
 
         .package(url: "https://github.com/leviouwendijk/Primitives.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Version.git", branch: "master"),
-        .package(
-            url: "https://github.com/leviouwendijk/TestFlows.git",
-            branch: "master"
-        ),
     ],
     targets: [
         .target(
@@ -173,23 +165,6 @@ let package = Package(
                 "DrawingboardProtocol",
                 "DrawingboardPadRuntime",
                 "DrawingboardNetworkTransport",
-            ]
-        ),
-        .executableTarget(
-            name: "DrawingboardTestFlows",
-            dependencies: [
-                "DrawingboardCore",
-                "DrawingboardProtocol",
-                "DrawingboardRendering",
-                "DrawingboardTransport",
-                "DrawingboardNetworkTransport",
-                "DrawingboardPadNetworkRuntime",
-                "DrawingboardHostRuntime",
-                "DrawingboardPadRuntime",
-                .product(
-                    name: "TestFlows",
-                    package: "TestFlows"
-                ),
             ]
         ),
         .executableTarget(
